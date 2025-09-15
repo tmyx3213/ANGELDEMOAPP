@@ -1,6 +1,10 @@
 import os
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse
@@ -37,7 +41,7 @@ async def api_preview(file: UploadFile = File(...)):
     except Exception as e:
         logger.exception("/api/preview: CSV parse failed")
         raise HTTPException(status_code=400, detail={"code": "INVALID_CSV", "message": str(e)})
-    columns, head_rows = preview_csv(df, limit=10)
+    columns, head_rows = preview_csv(df, limit=5)
     return {"columns": columns, "headRows": head_rows, "meta": {"rows": int(df.shape[0])}}
 
 

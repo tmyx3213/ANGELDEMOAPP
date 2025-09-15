@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
+from .claude_service import generate_claude_report
 
 
 def _safe_float(x):
@@ -143,32 +144,76 @@ def summarize_forecast(data: pd.DataFrame, fc: pd.DataFrame, horizon_days: int) 
 
 
 def generate_explanations(profile: Dict, trend: Dict, seas: Dict, fsum: Dict) -> Dict:
-    # Business tone (multi-paragraph)
-    p_rows = profile.get('rows')
-    p_range = f"{profile.get('date_min')}〜{profile.get('date_max')}"
-    p_stats = f"平均 {round(profile.get('mean', 0), 2)}、中央値 {round(profile.get('median', 0), 2)}、最小 {round(profile.get('min', 0), 2)}、最大 {round(profile.get('max', 0), 2)}。標準偏差 {round(profile.get('std', 0), 2)}、変動係数 {round((profile.get('cv') or 0), 2)}。"
-    p_quality = f"欠損 {profile.get('missing')} 件、重複 {profile.get('duplicates')} 件、外れ値 {profile.get('outliers')} 件。"
-    s_line = f"週次の季節性は{seas.get('weekly_strength')}で、週末は平日比 {round((seas.get('weekend_delta_pct') or 0), 1)}% です。"
-    t_line = f"直近30日の傾きは {round(trend.get('slope_30d') or 0, 4)}、直近3か月の変化率は {round((trend.get('delta_3mo_pct') or 0), 1)}% でした。"
-    f_line = f"5日先の予測中央値は {round((fsum.get('p50_5') or 0), 2)}（{round((fsum.get('lo_5') or 0), 2)}〜{round((fsum.get('up_5') or 0), 2)}）。30日先は {round((fsum.get('p50_30') or 0), 2)}（{round((fsum.get('lo_30') or 0), 2)}〜{round((fsum.get('up_30') or 0), 2)}）で、最新値比 {round((fsum.get('delta_30_pct') or 0), 1)}% です。"
-    c_line = f"信頼度は {fsum.get('confidence')}（帯幅比 {round((fsum.get('band_ratio') or 0), 3)}）。"
+    # リッチなビジネスレポート生成用のデータ準備
+    mean_val = profile.get('mean', 0)
+    median_val = profile.get('median', 0)
+    cv_val = profile.get('cv', 0)
+    rows = profile.get('rows', 0)
+    date_range = f"{profile.get('date_min')}〜{profile.get('date_max')}"
 
-    business = "\n\n".join([
-        f"データ概要：期間 {p_range}（{p_rows} 件）。",
-        p_stats,
-        p_quality,
-        s_line,
-        t_line,
-        f_line,
-        c_line,
-    ])
+    # Noneセーフな値取得
+    cv_val = cv_val or 0
+    mean_val = mean_val or 0
+    median_val = median_val or 0
 
-    technical = "\n\n".join([
-        f"基本統計: mean={round(profile.get('mean') or 0, 3)}, median={round(profile.get('median') or 0, 3)}, std={round(profile.get('std') or 0, 3)}, cv={round((profile.get('cv') or 0), 3)}",
-        f"seasonality: acf7={round((seas.get('acf7') or 0), 3)}, weekend_delta_pct={round((seas.get('weekend_delta_pct') or 0), 2)}",
-        f"trend: slope_30d={round((trend.get('slope_30d') or 0), 6)}, delta_3mo_pct={round((trend.get('delta_3mo_pct') or 0), 3)}",
-        f"forecast: p50_5={fsum.get('p50_5')}, p50_30={fsum.get('p50_30')}, band_ratio={round((fsum.get('band_ratio') or 0), 4)}, confidence={fsum.get('confidence')}",
-    ])
+    # 市場環境の判定
+    volatility = "低" if cv_val < 0.15 else "中" if cv_val < 0.3 else "高"
+    delta_3mo = trend.get('delta_3mo_pct') or 0
+    trend_sentiment = "好調" if delta_3mo > 5 else "軟調" if delta_3mo < -5 else "安定"
+
+    # 季節性の強さ
+    seasonality_strength = seas.get('weekly_strength', '不明')
+    weekend_delta = seas.get('weekend_delta_pct') or 0
+
+    # 予測の信頼性
+    confidence = fsum.get('confidence', '不明')
+    p50_30 = fsum.get('p50_30') or 0
+    delta_30_pct = fsum.get('delta_30_pct') or 0
+
+    # Claude 4 Sonnet風の豊かな分析レポート
+    business_report = f"""
+📈 **エグゼクティブサマリー**
+
+私は今回、{date_range}にわたる{rows}件のデータを詳細に分析いたしました。その結果、マスターにとって重要ないくつかの洞察が浮かび上がってまいりました。
+
+現在の市場環境を俯瞰いたしますと、平均値{mean_val:.2f}、中央値{median_val:.2f}という水準で推移しており、変動性は{volatility}レベルにあります。直近3ヶ月の動向を見ますと、全体として{trend_sentiment}な展開となっており、{delta_3mo:+.1f}%の変化が確認されます。
+
+---
+
+📊 **市場動向の深層分析**
+
+データの内在的特性を精査した結果、興味深いパターンが浮き彫りになりました。週次の季節性については{seasonality_strength}い傾向が見られ、特に週末の動向は平日比{weekend_delta:+.1f}%という特徴的な動きを示しております。
+
+これは市場参加者の行動パターンや、マクロ経済環境の影響を如実に反映していると考えられます。変動係数{cv_val:.3f}という数値が示すように、この市場は{"比較的予測しやすい" if cv_val < 0.2 else "やや複雑な動きを見せる" if cv_val < 0.4 else "高い不確実性を内包した"}環境にあると言えるでしょう。
+
+---
+
+🔮 **将来展望と戦略的含意**
+
+30日先の予測を申し上げますと、中央値{p50_30:.1f}という水準が見込まれ、現在の水準から{delta_30_pct:+.1f}%の変動が予想されます。この予測の信頼度は{confidence}く、{"十分に実用的な精度" if confidence == "高" else "参考程度の精度" if confidence == "中" else "限定的な精度"}でのご判断材料となります。
+
+特筆すべきは、{"安定した成長軌道" if delta_30_pct > 2 else "調整局面の可能性" if delta_30_pct < -2 else "横ばい圏での推移"}が示唆されている点です。これは今後の戦略立案において重要な要素となるでしょう。
+
+---
+
+💼 **推奨アクション**
+
+以上の分析結果を踏まえ、私からいくつかの提案をさせていただきます：
+
+1. **短期的観点**: {f"上昇トレンドを活用した積極的なポジション取り" if delta_30_pct > 3 else f"下降リスクを考慮した慎重なアプローチ" if delta_30_pct < -3 else "現状維持とリスク管理の強化"}が適切と考えられます。
+
+2. **中期的視点**: 週次の季節性パターンを活用することで、{"効果的なタイミング戦略が構築可能" if seasonality_strength in ["強", "中"] else "ファンダメンタル分析に重点を置いた戦略が有効"}でしょう。
+
+3. **リスク管理**: 現在の{volatility}ボラティリティ環境では、{"比較的安心してポジションを維持" if volatility == "低" else "適度なヘッジ戦略の検討" if volatility == "中" else "厳格なリスク管理体制の構築"}が肝要です。
+
+マスターの投資目標や時間軸に応じて、これらの洞察を最適にご活用いただければと存じます。何かご不明な点がございましたら、いつでもお申し付けください。
+
+---
+*このレポートは高度な時系列分析モデルによる包括的な分析結果に基づいております。*
+    """.strip()
+
+    # 技術詳細は削除（必要に応じて簡潔な手法説明のみ）
+    technical_note = "分析手法: 時系列予測モデル（Prophet）を使用し、トレンドと季節性を自動学習"
 
     # Rich narrative script for report mode (inspired by detailed report style)
     
@@ -189,17 +234,20 @@ def generate_explanations(profile: Dict, trend: Dict, seas: Dict, fsum: Dict) ->
     forecast_confidence = fsum.get('confidence', '不明')
     prediction_reliability = "高い精度" if forecast_confidence == '高' else "中程度の精度" if forecast_confidence == '中' else "限定的な精度"
     
+    # distribution_commentの定義
+    distribution_comment = "比較的対称的な分布" if abs(mean_val - median_val) / max(mean_val, 1) < 0.1 else "やや偏りのある分布"
+
     script = [
         {
-            "id": "opening", 
-            "text": f"✨ 分析が完了しました。今回扱ったのは{p_range}の{p_rows}件のデータです。全体を概観してみましょう。", 
-            "highlight": ["profile.rows"], 
+            "id": "opening",
+            "text": f"✨ 分析が完了しました。今回扱ったのは{date_range}の{rows}件のデータです。全体を概観してみましょう。",
+            "highlight": ["profile.rows"],
             "waitMs": 4000
         },
         {
-            "id": "data_overview", 
-            "text": f"📊 データの特徴を見ると、平均{mean_val:.1f}、中央値{median_val:.1f}で、{distribution_comment}になっています。", 
-            "highlight": ["profile.mean", "profile.median"], 
+            "id": "data_overview",
+            "text": f"📊 データの特徴を見ると、平均{mean_val:.1f}、中央値{median_val:.1f}で、{distribution_comment}になっています。",
+            "highlight": ["profile.mean", "profile.median"],
             "waitMs": 4500
         },
         {
@@ -259,10 +307,17 @@ def generate_explanations(profile: Dict, trend: Dict, seas: Dict, fsum: Dict) ->
         'forecast.band_ratio': ["[data-metric='forecast.band_ratio']"],
     }
 
-    return {
-        'business': business,
-        'technical': technical,
+    # Generate Claude-powered detailed report
+    claude_report = generate_claude_report(profile, trend, seas, fsum)
+    print(f"Generated claude_report length: {len(claude_report)} chars")
+
+    result = {
+        'business': business_report,
+        'technical': technical_note,
         'narrativeScript': script,
         'targets': targets,
+        'claude_report': claude_report,
     }
+    print(f"Final result keys: {list(result.keys())}")
+    return result
 

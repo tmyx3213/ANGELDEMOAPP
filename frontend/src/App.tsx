@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ThemeProvider } from '@mui/material/styles'
 import { theme } from './theme'
-import { AppBar, Box, Button, Card, CardContent, Container, CssBaseline, Divider, LinearProgress, Tab, Tabs, TextField, Toolbar, Typography, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton } from '@mui/material'
+import { AppBar, Box, Button, Card, CardContent, Container, CssBaseline, Divider, LinearProgress, CircularProgress, Tab, Tabs, TextField, Toolbar, Typography, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton } from '@mui/material'
 import Step from '@mui/material/Step'
 import StepLabel from '@mui/material/StepLabel'
 import Stepper from '@mui/material/Stepper'
@@ -32,14 +32,118 @@ export default function App() {
   const [currentScript, setCurrentScript] = useState(0)
   const [highlightedMetrics, setHighlightedMetrics] = useState<string[]>([])
   const [summaryModalOpen, setSummaryModalOpen] = useState(false)
+  const [methodModalOpen, setMethodModalOpen] = useState(false)
+  const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   const progress = useMemo(() => ((activeStep + 1) / steps.length) * 100, [activeStep])
+
+  const analysisMethodsData = {
+    'prophet': {
+      title: '🔮 Prophet',
+      subtitle: 'Meta社が開発した予測モデル',
+      description: `時系列のトレンドと季節性を自動で学習する高度なモデルです。
+
+**特徴：**
+• 株価や売上など、周期性のあるデータに最適
+• 短期の変動と長期傾向を同時に分析
+• 祝日効果や外れ値にも自動対応
+• Meta社が開発したオープンソース技術
+
+**適用場面：**
+• 売上予測、株価分析、需要予測
+• ウェブサイトのアクセス数予測
+• エネルギー消費量の予測
+
+**メリット：**
+• 高い予測精度
+• 季節性の自動検出
+• 予測区間の不確実性を提供`,
+      recommended: true
+    },
+    'moving_average': {
+      title: '📉 移動平均',
+      subtitle: 'シンプルで理解しやすい手法',
+      description: `データを平滑化してトレンドをわかりやすくする伝統的な手法です。
+
+**特徴：**
+• 短期と長期の移動平均を比較可能
+• 上昇・下降の傾向を簡単に把握
+• 計算がシンプルで理解しやすい
+• 金融分析でよく使われる
+
+**適用場面：**
+• 株価のテクニカル分析
+• 基本的なトレンド分析
+• データの平滑化
+
+**注意点：**
+• 急な変化には反応が遅い
+• 将来予測には限界がある
+• 季節性を考慮しない`,
+      recommended: false
+    },
+    'linear_regression': {
+      title: '📊 線形回帰',
+      subtitle: '基本的な統計分析手法',
+      description: `データ全体を直線で近似し、増加傾向や減少傾向を確認する手法です。
+
+**特徴：**
+• データ全体の大まかな傾向を把握
+• シンプルで理解しやすい
+• 統計的な基礎理論に基づく
+• 説明変数の影響を定量化可能
+
+**適用場面：**
+• 長期的なトレンド分析
+• 要因分析（価格と需要の関係など）
+• 基本的な予測モデル
+
+**限界：**
+• 季節性や非線形な動きは考慮されない
+• 複雑なパターンには対応困難
+• 外れ値の影響を受けやすい`,
+      recommended: false
+    },
+    'ai_auto': {
+      title: '🤖 AIおまかせ',
+      subtitle: '最適な手法を自動選択',
+      description: `どの手法が最適かわからない場合に、AIが自動で最適な分析手法を選択します。
+
+**特徴：**
+• データの特性を自動分析
+• 最適な手法を自動選択
+• 初心者にも安心
+• 専門知識不要
+
+**分析プロセス：**
+1. データの基本統計を分析
+2. 季節性やトレンドを検出
+3. 最適な手法を自動選択
+4. 結果を分かりやすく説明
+
+**今回のデモでは：**
+Prophet手法を選択するようになっています。実際のシステムでは、データの特性に応じて最適な手法が自動選択されます。`,
+      recommended: false
+    }
+  }
+
+  const openMethodModal = (methodKey: string) => {
+    console.log('openMethodModal called with:', methodKey)
+    setSelectedMethod(methodKey)
+    setMethodModalOpen(true)
+    console.log('Modal state set:', { selectedMethod: methodKey, modalOpen: true })
+  }
+
+  const adoptMethod = () => {
+    setMethodModalOpen(false)
+    setActiveStep(3) // データ列設定へ進む
+  }
 
   const onUpload = async (f: File) => {
     setFile(f)
-    // quick local preview (first 10 rows) while backend also parses
+    // quick local preview (first 5 rows) while backend also parses
     Papa.parse(f, {
       header: true,
-      preview: 10,
+      preview: 5,
       complete: (res) => {
         const columns = res.meta.fields || []
         const rows = (res.data as any[]).map(r => columns.map(c => r[c] ?? null))
@@ -76,7 +180,6 @@ export default function App() {
   const runForecast = async () => {
     if (!file || !dateCol || !valueCol) return
     setBusy(true)
-    setTab(1)
     try {
       const form = new FormData()
       form.append('file', file)
@@ -85,9 +188,15 @@ export default function App() {
       form.append('horizonDays', String(horizon))
       const r = await fetch('/api/forecast', { method: 'POST', body: form })
       const json = await r.json() as ForecastResponse
+      console.log('Full API Response:', json)
+      console.log('Has claude_report?', !!json.explanations?.claude_report)
       setResult(json)
+      // 実行完了後に結果タブに切り替え
+      setTab(1)
     } catch (e) {
       setResult({ history: [], forecast: [], summaryText: 'エラーが発生しました。', warnings: ['API呼び出しに失敗しました。'] })
+      // エラー時も結果タブに切り替え
+      setTab(1)
     } finally {
       setBusy(false)
     }
@@ -175,7 +284,7 @@ export default function App() {
                   }}>サンプルを読み込む（7203.T／過去2年）</Button>
                 </Box>
                 <Box sx={{ mt: 3 }}>
-                  <Typography variant="body1" gutterBottom>プレビュー（先頭10行）</Typography>
+                  <Typography variant="body1" gutterBottom>プレビュー（先頭5行）</Typography>
                   {preview ? (
                     <Box component="table" sx={{ width: '100%', overflowX: 'auto', borderCollapse: 'collapse' }}>
                       <thead>
@@ -187,7 +296,7 @@ export default function App() {
                         ))}
                       </tbody>
                     </Box>
-                  ) : <Typography color="text.secondary">CSVを選択すると先頭10行を表示します</Typography>}
+                  ) : <Typography color="text.secondary">CSVを選択すると先頭5行を表示します</Typography>}
                 </Box>
               </CardContent></Card>
             )}
@@ -208,12 +317,65 @@ export default function App() {
             {activeStep === 2 && (
               <Card><CardContent>
                 <Typography variant="h2" gutterBottom>どの手法で分析しますか？</Typography>
-                <Typography gutterBottom>本デモでは最終的に Prophet を使用します（他の選択肢は説明のみ）。</Typography>
-                <Box sx={{ display:'flex', flexDirection:'column', gap:1 }}>
-                  <Button variant="outlined" onClick={()=>setActiveStep(3)}>Prophet（推奨）</Button>
-                  <Button variant="outlined" onClick={()=>setActiveStep(3)}>移動平均</Button>
-                  <Button variant="outlined" onClick={()=>setActiveStep(3)}>線形回帰</Button>
-                  <Button variant="outlined" onClick={()=>setActiveStep(3)}>AIおまかせ</Button>
+                <Typography gutterBottom color="text.secondary">
+                  手法を選択すると詳細説明が表示されます。本デモでは最終的にProphetを使用します。
+                </Typography>
+                <Box sx={{ display:'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 2, mt: 2 }}>
+                  {Object.entries(analysisMethodsData).map(([key, method]) => (
+                    <Card
+                      key={key}
+                      sx={{
+                        transition: 'all 0.2s',
+                        border: method.recommended ? '2px solid #00B8D9' : '1px solid #E6EEF2',
+                        '&:hover': {
+                          transform: 'translateY(-2px)',
+                          boxShadow: 3,
+                          borderColor: '#00B8D9'
+                        }
+                      }}
+                    >
+                      <CardContent sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 1 }}>
+                          <Typography variant="h6" component="div" sx={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                            {method.title}
+                          </Typography>
+                          {method.recommended && (
+                            <Chip label="推奨" size="small" color="primary" sx={{ fontSize: '0.7rem' }} />
+                          )}
+                        </Box>
+                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                          {method.subtitle}
+                        </Typography>
+                        <Typography variant="body2" sx={{
+                          display: '-webkit-box',
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: 'vertical',
+                          overflow: 'hidden',
+                          color: 'text.secondary',
+                          lineHeight: 1.4
+                        }}>
+                          {method.description.split('\n')[0]}
+                        </Typography>
+                        <Typography
+                          variant="caption"
+                          color="primary"
+                          sx={{
+                            mt: 1,
+                            display: 'block',
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            '&:hover': { textDecoration: 'underline' }
+                          }}
+                          onClick={() => {
+                            console.log('Clicked method:', key)
+                            openMethodModal(key)
+                          }}
+                        >
+                          クリックして詳細を確認 →
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  ))}
                 </Box>
               </CardContent></Card>
             )}
@@ -228,19 +390,74 @@ export default function App() {
                 </Box>
                 {/* データプレビュー */}
                 <Box sx={{ mt: 3 }}>
-                  <Typography variant="body1" gutterBottom>プレビュー（先頭10行）</Typography>
+                  <Typography variant="body1" gutterBottom>プレビュー（先頭5行）</Typography>
                   {preview ? (
                     <Box component="table" sx={{ width: '100%', overflowX: 'auto', borderCollapse: 'collapse' }}>
                       <thead>
-                        <tr>{preview.columns.map(c => <th key={c} style={{textAlign:'left', borderBottom:'1px solid #E6EEF2', padding:'8px'}}>{c}</th>)}</tr>
+                        <tr>
+                          {preview.columns.map(c => {
+                            const isDateCol = dateCol === c
+                            const isValueCol = valueCol === c
+                            const isSelected = isDateCol || isValueCol
+                            return (
+                              <th
+                                key={c}
+                                style={{
+                                  textAlign: 'left',
+                                  borderBottom: '1px solid #E6EEF2',
+                                  padding: '8px',
+                                  backgroundColor: isSelected ? (isDateCol ? '#e3f2fd' : '#f3e5f5') : 'transparent',
+                                  color: isSelected ? (isDateCol ? '#1565c0' : '#7b1fa2') : 'inherit',
+                                  fontWeight: isSelected ? 600 : 'normal',
+                                  position: 'relative'
+                                }}
+                              >
+                                {c}
+                                {isSelected && (
+                                  <span style={{
+                                    fontSize: '0.7rem',
+                                    marginLeft: '4px',
+                                    padding: '2px 6px',
+                                    borderRadius: '4px',
+                                    backgroundColor: isDateCol ? '#1565c0' : '#7b1fa2',
+                                    color: 'white'
+                                  }}>
+                                    {isDateCol ? '日付' : '値'}
+                                  </span>
+                                )}
+                              </th>
+                            )
+                          })}
+                        </tr>
                       </thead>
                       <tbody>
                         {preview.headRows.map((row, i) => (
-                          <tr key={i}>{row.map((v, j) => <td key={j} style={{borderBottom:'1px solid #F0F4F7', padding:'8px'}}>{String(v ?? '')}</td>)}</tr>
+                          <tr key={i}>
+                            {row.map((v, j) => {
+                              const columnName = preview.columns[j]
+                              const isDateCol = dateCol === columnName
+                              const isValueCol = valueCol === columnName
+                              const isSelected = isDateCol || isValueCol
+                              return (
+                                <td
+                                  key={j}
+                                  style={{
+                                    borderBottom: '1px solid #F0F4F7',
+                                    padding: '8px',
+                                    backgroundColor: isSelected ? (isDateCol ? '#e3f2fd' : '#f3e5f5') : 'transparent',
+                                    color: isSelected ? (isDateCol ? '#1565c0' : '#7b1fa2') : 'inherit',
+                                    fontWeight: isSelected ? 500 : 'normal'
+                                  }}
+                                >
+                                  {String(v ?? '')}
+                                </td>
+                              )
+                            })}
+                          </tr>
                         ))}
                       </tbody>
                     </Box>
-                  ) : <Typography color="text.secondary">CSVを選択すると先頭10行を表示します</Typography>}
+                  ) : <Typography color="text.secondary">CSVを選択すると先頭5行を表示します</Typography>}
                 </Box>
               </CardContent></Card>
             )}
@@ -255,8 +472,44 @@ export default function App() {
                   <Chip label={`予測期間: ${horizon}日`} />
                 </Box>
                 <Box sx={{ mt: 2 }}>
-                  <Button variant="contained" onClick={runForecast} disabled={!file || !dateCol || !valueCol || busy}>実行</Button>
+                  <Button
+                    variant="contained"
+                    onClick={runForecast}
+                    disabled={!file || !dateCol || !valueCol || busy}
+                    sx={{ mr: 2 }}
+                  >
+                    {busy ? '実行中...' : '実行'}
+                  </Button>
+                  {busy && (
+                    <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 1 }}>
+                      <CircularProgress size={20} />
+                      <Typography variant="body2" color="text.secondary">
+                        AI分析を実行中です...
+                      </Typography>
+                    </Box>
+                  )}
                 </Box>
+
+                {busy && (
+                  <Box sx={{ mt: 3 }}>
+                    <Typography variant="body2" gutterBottom color="text.secondary">
+                      処理進捗
+                    </Typography>
+                    <LinearProgress
+                      sx={{
+                        height: 8,
+                        borderRadius: 4,
+                        backgroundColor: '#f0f4f7',
+                        '& .MuiLinearProgress-bar': {
+                          backgroundColor: '#00B8D9'
+                        }
+                      }}
+                    />
+                    <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                      データ解析、予測モデル構築、詳細レポート生成を実行中...
+                    </Typography>
+                  </Box>
+                )}
               </CardContent></Card>
             )}
 
@@ -380,23 +633,146 @@ export default function App() {
             <Dialog open={summaryModalOpen} onClose={() => setSummaryModalOpen(false)} maxWidth="md" fullWidth>
               <DialogTitle>📄 詳細分析レポート</DialogTitle>
               <DialogContent>
-                <Typography variant="h6" gutterBottom>ビジネスサマリー</Typography>
-                <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, mb: 3 }}>
-                  {result?.explanations?.business || result?.summaryText || 'レポートを生成中...'}
-                </Typography>
-                
-                <Typography variant="h6" gutterBottom>技術詳細</Typography>
-                <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, fontSize: '0.9rem', color: 'text.secondary' }}>
-                  {result?.explanations?.technical || 'Prophet を使用。理由: トレンドと季節性を自動で扱えるため、株価のような時系列データに適しています。'}
-                </Typography>
+                {console.log('Result explanations:', result?.explanations)}
+                {result?.explanations?.claude_report ? (
+                  <Box sx={{ '& h1, & h2, & h3': { mt: 2, mb: 1 }, '& p': { mb: 1.5, lineHeight: 1.8 }, '& ul, & ol': { mb: 1.5 }, '& li': { mb: 0.5 } }}>
+                    <div dangerouslySetInnerHTML={{
+                      __html: result.explanations.claude_report
+                        .replace(/\n/g, '<br>')
+                        .replace(/## (.*?)(<br>|$)/g, '<h2 style="font-size: 1.25rem; font-weight: 600; color: #1976d2; margin-top: 1.5rem; margin-bottom: 0.75rem;">$1</h2>')
+                        .replace(/# (.*?)(<br>|$)/g, '<h1 style="font-size: 1.5rem; font-weight: 700; color: #0d47a1; margin-top: 2rem; margin-bottom: 1rem;">$1</h1>')
+                        .replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600; color: #1565c0;">$1</strong>')
+                        .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                        .replace(/^- (.*?)(<br>|$)/gm, '<li style="margin-bottom: 0.25rem;">$1</li>')
+                        .replace(/(<li.*?<\/li>)/s, '<ul style="margin-bottom: 1rem; padding-left: 1.5rem;">$1</ul>')
+                    }} />
+                  </Box>
+                ) : (
+                  <Box>
+                    <Typography variant="h6" gutterBottom>📊 基本レポート</Typography>
+                    <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, mb: 2 }}>
+                      {result?.explanations?.business || result?.summaryText || 'レポートを生成中...'}
+                    </Typography>
+
+                    {result?.explanations?.technical && (
+                      <Typography sx={{ whiteSpace: 'pre-line', lineHeight: 1.8, fontSize: '0.85rem', color: 'text.secondary', mt: 2, fontStyle: 'italic' }}>
+                        {result.explanations.technical}
+                      </Typography>
+                    )}
+
+                    <Box sx={{ mt: 3, p: 2, bgcolor: 'info.light', borderRadius: 1 }}>
+                      <Typography variant="body2" color="info.contrastText">
+                        💡 より詳細なAI分析レポートを利用するには、ANTHROPIC_API_KEYの設定が必要です。
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
               </DialogContent>
               <DialogActions>
                 <Button onClick={() => setSummaryModalOpen(false)}>閉じる</Button>
               </DialogActions>
             </Dialog>
+
+            {/* 分析手法詳細モーダル */}
+            {console.log('Modal render state:', { methodModalOpen, selectedMethod })}
+            <Dialog
+              open={methodModalOpen}
+              onClose={() => {
+                console.log('Modal closing')
+                setMethodModalOpen(false)
+              }}
+              maxWidth="md"
+              fullWidth
+              sx={{ zIndex: 9999 }}
+            >
+              <DialogTitle>
+                テストモーダル - {selectedMethod}
+              </DialogTitle>
+              <DialogContent>
+                <Typography>
+                  モーダルが正常に表示されました！選択された手法: {selectedMethod}
+                </Typography>
+              </DialogContent>
+              <DialogActions>
+                <Button onClick={() => setMethodModalOpen(false)}>
+                  閉じる
+                </Button>
+                <Button variant="contained" onClick={adoptMethod}>
+                  この手法を採用
+                </Button>
+              </DialogActions>
+            </Dialog>
           </Box>
         )}
       </Container>
+
+      {/* 分析手法詳細モーダル（Container外に配置） */}
+      {console.log('Modal render state (outside):', { methodModalOpen, selectedMethod })}
+      <Dialog
+        open={methodModalOpen}
+        onClose={() => {
+          console.log('Modal closing')
+          setMethodModalOpen(false)
+        }}
+        maxWidth="md"
+        fullWidth
+        sx={{ zIndex: 9999 }}
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography variant="h5" component="div">
+              {selectedMethod && analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData]
+                ? analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData].title
+                : '分析手法詳細'}
+            </Typography>
+            <IconButton onClick={() => setMethodModalOpen(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </Box>
+          <Typography variant="subtitle1" color="text.secondary">
+            {selectedMethod && analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData]
+              ? analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData].subtitle
+              : ''}
+          </Typography>
+        </DialogTitle>
+        <DialogContent>
+          {selectedMethod && analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData] ? (
+            <Box sx={{
+              '& h3': { mt: 2, mb: 1, fontWeight: 600, color: '#1565c0' },
+              '& p': { mb: 1.5, lineHeight: 1.7 },
+              '& ul': { mb: 1.5, pl: 2 },
+              '& li': { mb: 0.5 },
+              '& strong': { fontWeight: 600, color: '#1565c0' }
+            }}>
+              <div dangerouslySetInnerHTML={{
+                __html: analysisMethodsData[selectedMethod as keyof typeof analysisMethodsData].description
+                  .replace(/\n\n/g, '</p><p>')
+                  .replace(/\n/g, '<br>')
+                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/^• (.*?)(<br>|$)/gm, '<li>$1</li>')
+                  .replace(/^(\d+)\. (.*?)(<br>|$)/gm, '<li>$2</li>')
+                  .replace(/(<li.*?<\/li>)+/gs, (match) => `<ul style="margin-bottom: 1rem; padding-left: 1.5rem;">${match}</ul>`)
+                  .replace(/^(.+?)$/s, '<p>$1</p>')
+              }} />
+            </Box>
+          ) : (
+            <Typography>データを読み込み中...</Typography>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <Button onClick={() => setMethodModalOpen(false)} color="inherit">
+            戻る
+          </Button>
+          <Button
+            variant="contained"
+            onClick={adoptMethod}
+            size="large"
+            sx={{ ml: 1, px: 3 }}
+          >
+            この手法を採用
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* ギャルゲー風セリフ欄（報告モード時） */}
       {reportMode && result?.narrativeScript && (

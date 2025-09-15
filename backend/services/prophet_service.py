@@ -86,7 +86,7 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
             "trend": tr,
             "seasonality": seas,
             "forecast_summary": fsum,
-            "explanations": {"business": exp["business"], "technical": exp["technical"]},
+            "explanations": {"business": exp["business"], "technical": exp["technical"], "claude_report": exp["claude_report"]},
             "narrativeScript": exp["narrativeScript"],
             "targets": exp["targets"],
         }
@@ -147,7 +147,7 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
         "trend": tr,
         "seasonality": seas,
         "forecast_summary": fsum,
-        "explanations": {"business": exp["business"], "technical": exp["technical"]},
+        "explanations": {"business": exp["business"], "technical": exp["technical"], "claude_report": exp["claude_report"]},
         "narrativeScript": exp["narrativeScript"],
         "targets": exp["targets"],
     }

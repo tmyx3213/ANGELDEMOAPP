@@ -2,7 +2,7 @@ from typing import List, Tuple
 import pandas as pd
 
 
-def preview_csv(df: pd.DataFrame, limit: int = 10) -> Tuple[List[str], list]:
+def preview_csv(df: pd.DataFrame, limit: int = 5) -> Tuple[List[str], list]:
     cols = list(df.columns)
     head = df.head(limit).fillna('').values.tolist()
     return cols, head
