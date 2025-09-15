@@ -48,31 +48,52 @@ def main():
     ap.add_argument('--period', default='2y')
     ap.add_argument('--interval', default='1d')
     ap.add_argument('--no-fallback', action='store_true', help='yfinance 失敗時に合成データへフォールバックしない')
+    ap.add_argument('--all-columns', action='store_true', help='CSV出力時に列を絞らず全列を保存する（デフォルトは Date, Close のみ）')
+    ap.add_argument('--output', default='', help='出力CSVパス（未指定なら assets/sample/toyota_7203.csv）')
     args = ap.parse_args()
 
-    out = Path(__file__).resolve().parents[1] / 'assets' / 'sample' / 'toyota_7203.csv'
+    out = Path(args.output) if args.output else (Path(__file__).resolve().parents[1] / 'assets' / 'sample' / 'toyota_7203.csv')
     out.parent.mkdir(parents=True, exist_ok=True)
 
     try:
         raw = fetch_yf(args.ticker, period=args.period, interval=args.interval)
         if raw is None or raw.empty:
             raise RuntimeError('No data returned')
-        df = raw.reset_index()
-        # yfinance の返り値は Date/DatetimeIndex の場合がある
-        date_col = 'Date' if 'Date' in df.columns else 'index' if 'index' in df.columns else df.columns[0]
-        if 'Close' not in df.columns:
-            raise RuntimeError('Close column missing in Yahoo response')
-        df = df[[date_col, 'Close']].rename(columns={date_col: 'Date'})
-        df['Date'] = pd.to_datetime(df['Date']).dt.strftime('%Y-%m-%d')
+        df = raw.copy()
+        # flatten columns if MultiIndex
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = ['_'.join([str(x) for x in tpl if str(x) != '']).strip() for tpl in df.columns.values]
+        # reset index to a proper Date column
+        df = df.reset_index()
+        # standardize datetime column name to 'Date'
+        if 'Date' not in df.columns:
+            # yfinance sometimes uses 'index' or returns DatetimeIndex
+            idx_name = 'index' if 'index' in df.columns else df.columns[0]
+            df = df.rename(columns={idx_name: 'Date'})
+        # convert to date string (keep time if present)
+        if np.issubdtype(pd.to_datetime(df['Date'], errors='coerce').dtype, np.datetime64):
+            # keep full ISO format if time exists; else YYYY-MM-DD
+            dt = pd.to_datetime(df['Date'], errors='coerce')
+            if (dt.dt.time != pd.Timestamp(0).time()).any():
+                df['Date'] = dt.dt.tz_localize(None, ambiguous='NaT', nonexistent='shift_forward').dt.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                df['Date'] = dt.dt.strftime('%Y-%m-%d')
+        # limit columns or keep all
+        if not args.all_columns:
+            if 'Close' not in df.columns:
+                raise RuntimeError('Close column missing in Yahoo response')
+            df = df[['Date', 'Close']]
+        out.parent.mkdir(parents=True, exist_ok=True)
         df.to_csv(out, index=False)
-        print(f'Saved (Yahoo): {out}  rows={len(df)}')
+        print(f'Saved (Yahoo): {out}  rows={len(df)}  cols={list(df.columns)}')
     except Exception as e:
         if args.no_fallback:
             raise SystemExit(f'Fetch failed and fallback disabled: {e}')
         # 合成データにフォールバック
         synth = generate_synth(days=520)
+        out.parent.mkdir(parents=True, exist_ok=True)
         synth.to_csv(out, index=False)
-        print(f'Saved (Synthetic fallback): {out}  rows={len(synth)}')
+        print(f'Saved (Synthetic fallback): {out}  rows={len(synth)}  cols={list(synth.columns)}')
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import timedelta
 from utils.csv_utils import normalize
+from services.analytics import compute_profile, compute_trend, compute_seasonality, summarize_forecast, generate_explanations
 import logging
 
 logger = logging.getLogger("forecast")
@@ -46,6 +47,13 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
             {"ds": d, "yhat": yh, "yhat_lower": lo, "yhat_upper": up}
             for d, yh, lo, up in zip(future_dates, yhat_list, lower, upper)
         ]
+        # Build fc DataFrame for summarization
+        fc_df = pd.DataFrame({
+            'ds': pd.to_datetime(future_dates),
+            'yhat': yhat_list,
+            'yhat_lower': lower,
+            'yhat_upper': upper,
+        })
 
         latest = hist_out['y'].iloc[-1] if len(hist_out) else None
         horizon_point = yhat_list[-1] if yhat_list else None
@@ -57,6 +65,13 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
             direction = "+" if delta_pct >= 0 else ""
             summary = f"30日（簡易）予測中央値は最新終値比 {direction}{delta_pct}%。"
 
+        # analytics on fallback
+        prof = compute_profile(data_norm)
+        tr = compute_trend(data_norm)
+        seas = compute_seasonality(data_norm)
+        fsum = summarize_forecast(data_norm, fc_df, horizon)
+        exp = generate_explanations(prof, tr, seas, fsum)
+
         warnings = [f"Prophetが利用できないため、簡易予測（移動平均/線形外挿）にフォールバックしました。理由: {reason}"]
         if data_norm.shape[0] < horizon * 2:
             warnings.append("データ量が少ないため、予測期間の短縮を推奨します。")
@@ -67,6 +82,13 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
             "summaryText": summary,
             "warnings": warnings,
             "diagnostics": {"outliers": 0, "missing": 0, "deduped": 0},
+            "profile": prof,
+            "trend": tr,
+            "seasonality": seas,
+            "forecast_summary": fsum,
+            "explanations": {"business": exp["business"], "technical": exp["technical"]},
+            "narrativeScript": exp["narrativeScript"],
+            "targets": exp["targets"],
         }
 
     # Prophet トライ。失敗したらフォールバック
@@ -108,10 +130,24 @@ def run_prophet_forecast(df: pd.DataFrame, date_col: str, value_col: str, horizo
     if data.shape[0] < horizon_days * 2:
         warnings.append("データ量が少ないため、予測期間の短縮を推奨します。")
 
+    # analytics
+    prof = compute_profile(data)
+    tr = compute_trend(data)
+    seas = compute_seasonality(data)
+    fsum = summarize_forecast(data, fc, horizon_days)
+    exp = generate_explanations(prof, tr, seas, fsum)
+
     return {
         "history": hist.to_dict(orient='records'),
         "forecast": forecast.to_dict(orient='records'),
         "summaryText": summary,
         "warnings": warnings,
         "diagnostics": diagnostics,
+        "profile": prof,
+        "trend": tr,
+        "seasonality": seas,
+        "forecast_summary": fsum,
+        "explanations": {"business": exp["business"], "technical": exp["technical"]},
+        "narrativeScript": exp["narrativeScript"],
+        "targets": exp["targets"],
     }

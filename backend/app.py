@@ -68,10 +68,13 @@ async def api_forecast(
 
 @app.get('/api/sample/toyota')
 async def api_sample_toyota():
+    # 優先: 全カラム版 → 既定の軽量版
+    full = ASSETS / 'sample' / 'toyota_full_7203.csv'
     sample = ASSETS / 'sample' / 'toyota_7203.csv'
-    if not sample.exists():
+    path = full if full.exists() else sample
+    if not path.exists():
         raise HTTPException(status_code=404, detail='Sample not found')
-    return FileResponse(sample, media_type='text/csv', filename='toyota_7203.csv')
+    return FileResponse(path, media_type='text/csv', filename=path.name)
 
 
 # 静的配信（ビルド済みフロント）
