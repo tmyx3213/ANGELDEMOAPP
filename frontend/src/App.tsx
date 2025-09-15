@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { ThemeProvider } from '@mui/material/styles'
 import { theme } from './theme'
-import { AppBar, Box, Button, Card, CardContent, Container, CssBaseline, Divider, LinearProgress, CircularProgress, Tab, Tabs, TextField, Toolbar, Typography, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton } from '@mui/material'
+import { AppBar, Box, Button, Card, CardContent, Container, CssBaseline, Divider, LinearProgress, CircularProgress, Tab, Tabs, TextField, Toolbar, Typography, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Fade } from '@mui/material'
 import Step from '@mui/material/Step'
 import StepLabel from '@mui/material/StepLabel'
 import Stepper from '@mui/material/Stepper'
@@ -9,6 +9,8 @@ import CloseIcon from '@mui/icons-material/Close'
 import Papa from 'papaparse'
 import Plot from 'react-plotly.js'
 import type { ForecastResponse, PreviewResponse } from './types'
+import { WelcomeScreen } from './components/WelcomeScreen'
+import { CorporateDataScreen } from './components/CorporateDataScreen'
 
 const steps = [
   '① データ読み込み',
@@ -19,6 +21,8 @@ const steps = [
 ]
 
 export default function App() {
+  const [showWelcome, setShowWelcome] = useState(true)
+  const [showCorporateData, setShowCorporateData] = useState(false)
   const [tab, setTab] = useState(0)
   const [activeStep, setActiveStep] = useState(0)
   const [file, setFile] = useState<File | null>(null)
@@ -202,12 +206,65 @@ Prophet手法を選択するようになっています。実際のシステム�
     }
   }
 
+  if (showWelcome) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <WelcomeScreen
+          onPersonalStart={() => setShowWelcome(false)}
+          onCorporateStart={() => {
+            setShowWelcome(false)
+            setShowCorporateData(true)
+          }}
+        />
+      </ThemeProvider>
+    )
+  }
+
+  if (showCorporateData) {
+    return (
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <Fade in timeout={800}>
+          <Box>
+            <CorporateDataScreen
+              onBack={() => {
+                setShowCorporateData(false)
+                setShowWelcome(true)
+              }}
+            />
+          </Box>
+        </Fade>
+      </ThemeProvider>
+    )
+  }
+
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
+      <Fade in timeout={800}>
+        <Box>
       <AppBar position="static" color="transparent" elevation={0}>
         <Toolbar>
-          <Typography variant="h1" sx={{ flex: 1, fontSize: 20 }}>自然言語データ分析（MVP）</Typography>
+          <Typography
+            variant="h1"
+            sx={{
+              flex: 1,
+              fontSize: 20,
+              cursor: 'pointer',
+              '&:hover': {
+                color: '#00B8D9',
+                textDecoration: 'underline'
+              },
+              transition: 'all 0.2s ease'
+            }}
+            onClick={() => {
+              setShowWelcome(true)
+              setShowCorporateData(false)
+            }}
+          >
+            自然言語データ分析（MVP）
+          </Typography>
           <Button onClick={() => window.open('/api/sample/toyota')}>サンプルを読み込む</Button>
           <Button onClick={() => alert('ヘルプは準備中です')}>ヘルプ</Button>
         </Toolbar>
@@ -867,6 +924,8 @@ Prophet手法を選択するようになっています。実際のシステム�
           </Box>
         </Box>
       )}
+        </Box>
+      </Fade>
     </ThemeProvider>
   )
 }
